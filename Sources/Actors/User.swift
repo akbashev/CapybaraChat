@@ -8,34 +8,39 @@ public distributed actor User: Reducer {
   
   public typealias ActorSystem = ClientServerActorSystem
   
-  distributed public func getCurrentState() -> State {
-    _state
+  private let userDatabase: UserDatabaseClient
+  
+  distributed public func getCurrentState() async throws -> State {
+    try await self.initiateStateIfNeeded()
   }
   
   distributed public func getUpdates() async throws -> State {
-    try await promise.clearAndWait()
+    try await self.observer.subscribe()
   }
   
-  private lazy var promise: Promised<State> = .init()
-  private var _state: State {
+  private var observer: Observer<State> = .init()
+  private var actorState: ActorState<State> {
     didSet {
-      self.promise.resolve(with: _state)
+      switch self.actorState {
+        case let .loaded(value):
+          Task {
+            await self.observer.resolve(.success(value))
+          }
+        case .initial:
+          break
+      }
     }
   }
-  private let database: UserDatabaseClient
-
-  // TODO: Marked as `async throws`, check data racing, add queue or other solution
+  
   distributed public func send(
     action: Action
-  ) async throws -> State {
-    var state = _state
+  ) async throws {
+    var state = try await getCurrentState()
     let task = self.reduce(&state, action)
-    if let action = try await task.value {
-      self._state = state
-      return try await self.send(action: action)
+    self.actorState = .loaded(state)
+    if let action = try? await task.value {
+      try await self.send(action: action)
     }
-    self._state = state
-    return state
   }
   
   private func reduce(
@@ -55,21 +60,25 @@ public distributed actor User: Reducer {
           .update(status: .offline)
         }
       case let .update(status):
-        return Task { [state] in
-          try await state.room?.send(
+        let room = state.room
+        let userId = state.userId
+        return Task {
+          try await room?.send(
             action: .update(
               status: status,
-              from: state.userId
+              from: userId
             )
           )
           return nil
         }
       case let .send(message):
-        return Task { [state] in
-          try await state.room?.send(
+        let room = state.room
+        let userId = state.userId
+        return Task {
+          try await room?.send(
             action: .send(
               message: message,
-              from: state.userId
+              from: userId
             )
           )
           return nil
@@ -82,12 +91,36 @@ public distributed actor User: Reducer {
   
   public init(
     actorSystem: ActorSystem,
-    database: UserDatabaseClient,
-    userId: Name
+    userDatabase: UserDatabaseClient,
+    userId: String
   ) {
     self.actorSystem = actorSystem
-    self.database = database
-    self._state = .init(userId: userId)
+    self.userDatabase = userDatabase
+    self.actorState = .initial(userId)
+  }
+  
+  private func initiateStateIfNeeded() async throws -> State {
+    switch actorState {
+      case .initial(let userId):
+        let state: State = try await Task {
+          do {
+            let dbState = try await self.userDatabase.getUser(userId)
+            return State(userId: .init(rawValue: dbState.name))
+          } catch {
+            switch error {
+              case UserDatabaseClient.Error.notFound:
+                try await self.userDatabase.updateUser(.init(name: userId))
+                return State(userId: .init(rawValue: userId))
+              default:
+                throw ActorStateError.cantLoad
+            }
+          }
+        }.value
+        self.actorState = .loaded(state)
+        return state
+      case .loaded(let v):
+        return v
+    }
   }
 }
 

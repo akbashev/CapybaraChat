@@ -2,7 +2,7 @@ import GRDB
 import Foundation
 
 public struct UserDatabaseClient {
-  public let getUser: (String) async throws -> (Models.User?)
+  public let getUser: (String) async throws -> (Models.User)
   public let updateUser: (Models.User) async throws -> ()
 }
 
@@ -41,25 +41,15 @@ extension UserDatabaseClient {
   internal static func grdb(
     _ dbQueue: DatabaseQueue
   ) -> UserDatabaseClient {
-    let getUser: (String) async throws -> (Models.User?) = { user in
+    let getUser: (String) async throws -> (Models.User) = { user in
       try await dbQueue.read { db in
         guard let user = try UserDatabaseClient.User
           .including(optional: UserDatabaseClient.User.rooms)
           .filter(Column("name") == user)
           .fetchOne(db)
         else { throw UserDatabaseClient.Error.notFound }
-        let rooms = try user
-          .rooms
-          .fetchAll(db)
-          .compactMap {
-            try $0.room.fetchOne(db)
-          }
-          .map {
-            $0.name
-          }
         return .init(
-          name: user.name,
-          roomId: nil
+          name: user.name
         )
       }
     }

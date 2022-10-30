@@ -36,8 +36,8 @@ public func configure(_ app: Application) async throws {
               .makeActorWithID(actorId) {
                 return User(
                   actorSystem: system,
-                  database: database.users,
-                  userId: .init(rawValue: id._id)
+                  userDatabase: database.users,
+                  userId: id._id
                 )
               }
           case String(describing: Room.self):
@@ -45,8 +45,8 @@ public func configure(_ app: Application) async throws {
               .makeActorWithID(actorId) {
                 return Room(
                   actorSystem: system,
-                  database: database.rooms,
-                  roomId: .init(rawValue: id._id)
+                  roomDatabase: database.rooms,
+                  roomId: id._id
                 )
               }
           default:

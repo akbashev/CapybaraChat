@@ -6,8 +6,11 @@ public protocol Reducer<State, Action>: Actor {
   associatedtype State: Equatable
   associatedtype Action = Codable & Sendable
   
-  @discardableResult
-  func send(action: Action) async throws -> State
+  func send(action: Action) async throws
   func getCurrentState() async throws -> State
   func getUpdates() async throws -> State
+}
+
+public enum ReducerError: Error {
+  case notSubscribed
 }

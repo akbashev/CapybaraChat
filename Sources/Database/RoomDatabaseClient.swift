@@ -3,11 +3,11 @@ import Foundation
 
 public struct RoomDatabaseClient {
   public typealias UserRoomPair = (user: String, room: String)
-
+  
   public let getRoom: (String) async throws -> (Models.Room)
   public let updateRoom: (Models.Room) async throws -> ()
   public let updateStatus: (Int, UserRoomPair) async throws -> ()
-  public let addGuest: (UserRoomPair) async throws -> (Models.User)
+  public let addGuest: (UserRoomPair) async throws -> ()
   public let addMessage: (Models.Message, UserRoomPair) async throws -> ()
 }
 
@@ -62,7 +62,7 @@ extension RoomDatabaseClient.Room: TableRecord {
   mutating func didInsert(_ inserted: InsertionSuccess) {
     id = inserted.rowID
   }
-
+  
   static let guests = hasMany(RoomDatabaseClient.UserRoom.self)
   var guests: QueryInterfaceRequest<RoomDatabaseClient.UserRoom> {
     request(for: RoomDatabaseClient.Room.guests)
@@ -78,7 +78,7 @@ extension RoomDatabaseClient.Message: TableRecord {
   mutating func didInsert(_ inserted: InsertionSuccess) {
     id = inserted.rowID
   }
-
+  
   static let user = hasOne(UserDatabaseClient.User.self, using: .init(["userId"]))
   var user: QueryInterfaceRequest<UserDatabaseClient.User> {
     return request(for: RoomDatabaseClient.Message.user)
@@ -91,7 +91,7 @@ extension RoomDatabaseClient.Message: TableRecord {
 }
 
 extension RoomDatabaseClient {
-
+  
   /**
    Don't remember last time I've touched SQL 🥲.
    So some straight forward naive solutions here.
@@ -124,35 +124,32 @@ extension RoomDatabaseClient {
           .compactMap {
             try? $0.guest.fetchOne(db)
           }
-        let guests = try users
-          .map { user -> Models.User in
-          let status = try RoomDatabaseClient.UserRoom
-            .filter(Column("userId") == user.id)
-            .filter(Column("roomId") == room.id)
-            .fetchOne(db)?
-            .status ?? .offline
-          let messages: [Models.Message] = try room
-            .messages
-            .filter(Column("userId") == user.id)
-            .fetchAll(db)
-            .map { message -> Models.Message in
-                .init(
-                  createdAt: message.createdAt,
-                  text: message.text
-                )
+        let messages: [String: [Models.Message]] = try users
+          .reduce(
+            into: [String: [Models.Message]](), { partialResult, databaseUser in
+              let messages: [Models.Message] = try room
+                .messages
+                .filter(Column("userId") == databaseUser.id)
+                .fetchAll(db)
+                .map { Models.Message(createdAt: $0.createdAt, text: $0.text) }
+              partialResult[databaseUser.name] = messages
             }
-            return .init(name: user.name, roomId: nil)
-//          return Models.Room.Guest(
-//            name: .init(rawValue: user.name),
-//            status: .init(status),
-//            messages: messages
-//          )
-        }
+          )
+        let statuses: [String: Int] =  try users
+          .reduce(
+            into: [String: Int](), { partialResult, databaseUser in
+              let status = try RoomDatabaseClient.UserRoom
+                .filter(Column("userId") == databaseUser.id)
+                .filter(Column("roomId") == room.id)
+                .fetchOne(db)?
+                .status ?? .offline
+              partialResult[databaseUser.name] = status.rawValue
+            }
+          )
         return Models.Room(
           name: room.name,
-          guestIds: [],
-          messages: [:],
-          statuses: [:]
+          messages: messages,
+          statuses: statuses
         )
       }
     }
@@ -169,7 +166,7 @@ extension RoomDatabaseClient {
       }
       guard let roomId,
             let userId else {
-         return
+        return
       }
       try await dbQueue.write { db in
         try RoomDatabaseClient.Message
@@ -182,7 +179,7 @@ extension RoomDatabaseClient {
           ).insert(db)
       }
     }
-    let addGuest: (UserRoomPair) async throws -> (Models.User) = { userRoom in
+    let addGuest: (UserRoomPair) async throws -> () = { userRoom in
       let (user, room) = (userRoom.user, userRoom.room)
       let (roomId, userId) = try await dbQueue.read { db in
         let room = try RoomDatabaseClient.Room
@@ -194,7 +191,7 @@ extension RoomDatabaseClient {
         return (room?.id, user?.id)
       }
       guard let roomId = roomId,
-              let userId = userId else {
+            let userId = userId else {
         throw RoomDatabaseClient.Error.notFound
       }
       if (
@@ -214,34 +211,6 @@ extension RoomDatabaseClient {
           roomId: roomId
         ).upsert(db)
       }
-      return try await dbQueue.read { db in
-        guard let user = try UserDatabaseClient.User
-          .including(optional: UserDatabaseClient.User.messages)
-          .filter(key: userId)
-          .fetchOne(db)
-        else { throw RoomDatabaseClient.Error.notFound }
-        let messages: [Models.Message] = try user
-          .messages
-          .filter(Column("roomId") == roomId)
-          .fetchAll(db)
-          .map { message -> Models.Message in
-            Models.Message
-              .init(
-//                user: .init(rawValue: user.name),
-                createdAt: message.createdAt,
-                text: message.text
-              )
-          }
-        return .init(
-          name: user.name,
-          roomId: nil
-        )
-//        return .init(
-//          name: .init(rawValue: user.name),
-//          status: .online,
-//          messages: messages
-//        )
-      }
     }
     let updateStatus: (Int, RoomDatabaseClient.UserRoomPair) async throws -> () = { status, userRoom in
       let (user, room) = (userRoom.user, userRoom.room)
@@ -249,7 +218,7 @@ extension RoomDatabaseClient {
         guard let room = try RoomDatabaseClient.Room
           .filter(Column("name") == room)
           .fetchOne(db),
-        let user = try UserDatabaseClient.User
+              let user = try UserDatabaseClient.User
           .filter(Column("name") == user)
           .fetchOne(db)
         else {

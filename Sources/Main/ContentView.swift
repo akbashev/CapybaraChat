@@ -32,5 +32,6 @@ public struct ContentView: View {
     NavigationView {
       UserView(id: self.userId)
     }
+    .navigationViewStyle(StackNavigationViewStyle())
   }
 }

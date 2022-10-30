@@ -17,7 +17,6 @@ let package = Package(
     .executable(name: "server", targets: ["server"]),
     //
     .library(name: "ActorSystems", targets: ["ActorSystems"]),
-    .library(name: "AsyncPromise", targets: ["AsyncPromise"]),
     .library(name: "Actors", targets: ["Actors"]),
     .library(name: "Database", targets: ["Database"]),
     .library(name: "Main", targets: ["Main"])
@@ -68,13 +67,9 @@ let package = Package(
       ]
     ),
     .target(
-      name: "AsyncPromise"
-    ),
-    .target(
       name: "Actors",
       dependencies: [
         "ActorSystems",
-        "AsyncPromise",
         .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
         "Database"
       ]
