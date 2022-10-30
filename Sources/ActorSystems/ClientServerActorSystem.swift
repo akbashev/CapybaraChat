@@ -801,7 +801,7 @@ extension ClientServerActorSystem {
           encoder.userInfo[.actorSystemKey] = actorSystem
           
           var data = ByteBuffer()
-          try? data.writeJSONEncodable(
+          _ = try? data.writeJSONEncodable(
             envelope,
             encoder: encoder
           )

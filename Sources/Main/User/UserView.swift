@@ -1,55 +1,41 @@
-import ComposableArchitecture
 import SwiftUI
-
+import Actors
 
 struct UserView: View {
   
-  var store: Store<UserState, UserAction>
+  @StateObject private var user: ActorViewModel<User>
   @State var roomName: String = ""
   
   init(
-    store: Store<UserState, UserAction>
+    id: String
   ) {
-    self.store = store
+    self._user = .init(
+      wrappedValue: .init(
+        clusterSystem: clusterSystem,
+        id: id
+      )
+    )
   }
   
   var body: some View {
-    WithViewStore(self.store) { viewStore in
-      VStack(spacing: 16) {
-        Text("User: \(viewStore.user.name.rawValue)")
-          .font(.headline)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        TextField(
-          "Enter room name",
-          text: $roomName
+    VStack(spacing: 16) {
+      Text("User: \(user.state?.userId.rawValue ?? "")")
+        .font(.headline)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      TextField(
+        "Enter room name",
+        text: $roomName
+      )
+      NavigationLink(
+        destination: RoomView(
+          id: self.roomName,
+          user: user
         )
-        NavigationLink(
-          destination: IfLetStore(
-            self.store.scope(
-              state: \.roomState,
-              action: UserAction.room
-            )
-          ) {
-            RoomView(store: $0)
-          } else: {
-            ProgressView()
-          },
-          isActive: viewStore.binding(
-            get: \.isRoomShowing,
-            send: { UserAction.showRoom($0, self.roomName) }
-          )
-        ) {
-          Text("Connect")
-        }.disabled(roomName.isEmpty)
-      }
-      .padding()
-      .onAppear {
-        viewStore.send(.connect)
-      }
-      .onDisappear {
-        viewStore.send(.disconnect)
-      }
+      ) {
+        Text("Connect")
+      }.disabled(roomName.isEmpty)
     }
+    .padding()
   }
 }
 

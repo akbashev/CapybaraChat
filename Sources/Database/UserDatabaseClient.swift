@@ -1,9 +1,8 @@
 import GRDB
 import Foundation
-import Models
 
 public struct UserDatabaseClient {
-  public let getUser: (Models.User.Name) async throws -> (Models.User?)
+  public let getUser: (String) async throws -> (Models.User?)
   public let updateUser: (Models.User) async throws -> ()
 }
 
@@ -42,11 +41,11 @@ extension UserDatabaseClient {
   internal static func grdb(
     _ dbQueue: DatabaseQueue
   ) -> UserDatabaseClient {
-    let getUser: (Models.User.Name) async throws -> (Models.User?) = { user in
+    let getUser: (String) async throws -> (Models.User?) = { user in
       try await dbQueue.read { db in
         guard let user = try UserDatabaseClient.User
           .including(optional: UserDatabaseClient.User.rooms)
-          .filter(Column("name") == user.rawValue)
+          .filter(Column("name") == user)
           .fetchOne(db)
         else { throw UserDatabaseClient.Error.notFound }
         let rooms = try user
@@ -59,10 +58,8 @@ extension UserDatabaseClient {
             $0.name
           }
         return .init(
-          name: .init(
-            rawValue: user.name
-          ),
-          roomIds: rooms
+          name: user.name,
+          roomId: nil
         )
       }
     }
@@ -71,7 +68,7 @@ extension UserDatabaseClient {
         try UserDatabaseClient.User
           .init(
             id: nil,
-            name: user.name.rawValue
+            name: user.name
           )
           .insert(db)
       }

@@ -1,58 +1,89 @@
-import ComposableArchitecture
 import SwiftUI
 import ActorSystems
-import Models
+import Actors
 
 struct RoomView: View {
   
-  let store: Store<RoomState, RoomAction>
+  @StateObject private var room: ActorViewModel<Room>
+  @StateObject private var user: ActorViewModel<User>
+  
   @State var message: String = ""
+  
+  init(
+    id: String,
+    user: ActorViewModel<User>
+  ) {
+    self._room = .init(wrappedValue: .init(clusterSystem: clusterSystem, id: id))
+    self._user = .init(wrappedValue: user)
+  }
 
   public var body: some View {
-    WithViewStore(self.store) { viewStore in
-      VStack(spacing: 0) {
-        GuestsView(
-          guests: viewStore.guests
-            .sorted(by: { $0.status < $1.status })
-        )
-        Divider()
-        MessagesView(
-          messages: viewStore.messages,
-          user: viewStore.user.name
-        )
-        if !viewStore.textingGuests.isEmpty {
-          HStack {
-            Spacer()
-            TextingGuestsView(
-              guests: viewStore.textingGuests
-            )
-          }.padding([.leading, .trailing], 16)
-            .padding([.top], 8)
-        }
-        Divider()
-          .padding([.top], 8)
-        InputView(
-          message: $message,
-          send: { message in
-            viewStore.send(.send(message: message))
-          },
-          change: { message in
-            viewStore.send(.update(message.isEmpty ? .online : .texting))
+    VStack(spacing: 0) {
+      GuestsView(
+        guests: room.state?.statuses
+          .map { .init(name: $0.key, status: $0.value) }
+          .sorted(by: { $0.status < $1.status })
+         ?? []
+      )
+      Divider()
+      MessagesView(
+        messages: room.state?.messages
+          .map { value -> [MessagesView.Msg] in
+            let (id, messages) = (value.key, value.value)
+            return messages
+              .map {
+                MessagesView.Msg(
+                  userId: id.rawValue,
+                  roomId: self.room.id,
+                  message: $0
+                )
+              }
           }
-        )
-        .padding()
-      }.onAppear {
-        viewStore.send(.connect)
+          .flatMap { $0 }
+          .sorted(by: { $0.message.createdAt > $1.message.createdAt }) ?? [],
+        currentUser: user.id
+      )
+      if room.state?.textingGuests.isEmpty == false {
+        HStack {
+          Spacer()
+          TextingGuestsView(
+            guests: room.state?.textingGuests ?? []
+          )
+        }.padding([.leading, .trailing], 16)
+          .padding([.top], 8)
       }
-      .navigationBarTitle(viewStore.room.name.rawValue, displayMode: .inline)
+      Divider()
+        .padding([.top], 8)
+      InputView(
+        message: $message,
+        send: { message in
+          user.send(.send(message: message))
+        },
+        change: { message in
+          user.send(.update(status: message.isEmpty ? .online : .texting))
+        }
+      )
+      .padding()
+    }
+    .navigationTitle(room.id)
+    .onAppear {
+      if let room = room.actor {
+        self.user.send(.join(room: room))
+      }
     }
   }
 }
 
 struct MessagesView: View {
   
-  let messages: [Room.Message]
-  let user: User.Name
+  struct Msg: Equatable {
+    let userId: String
+    let roomId: String
+    let message: Message
+  }
+  
+  let messages: [Msg]
+  let currentUser: String
   
   var body: some View {
     ScrollView {
@@ -66,7 +97,7 @@ struct MessagesView: View {
           ),
           id: \.1
         ) { value in
-          Text(value.0.text)
+          Text(value.0.message.text)
             .foregroundColor(.white)
             .padding([.leading, .trailing], 12)
             .padding([.top, .bottom], 8)
@@ -77,14 +108,14 @@ struct MessagesView: View {
                   lineWidth: 0
                 )
                 .background(
-                  value.0.user == user ? Color.blue : Color.green
+                  value.0.userId == currentUser ? Color.blue : Color.green
                 )
                 .clipped()
             )
             .clipShape(Capsule())
             .frame(
               maxWidth: .infinity,
-              alignment: value.0.user == user ? .trailing : .leading
+              alignment: value.0.userId == currentUser ? .trailing : .leading
             )
             .rotationEffect(Angle(degrees: 180))
             .scaleEffect(x: -1.0, y: 1.0, anchor: .center)
@@ -128,13 +159,13 @@ struct InputView: View {
 
 struct TextingGuestsView: View {
   
-  let guests: [Models.Room.Guest]
+  let guests: [User.Name]
   
   var body: some View {
     Group {
       Text(
         guests
-          .compactMap { $0.name.rawValue.first }
+          .compactMap { $0.rawValue.first }
           .map { String($0) }
           .joined(separator: ",")
       )
@@ -150,7 +181,12 @@ struct TextingGuestsView: View {
 
 struct GuestsView: View {
   
-  let guests: [Models.Room.Guest]
+  struct Guest: Equatable {
+    let name: User.Name
+    let status: User.Status
+  }
+  
+  var guests: [Guest]
   
   var body: some View {
     ScrollView(.horizontal) {
@@ -165,7 +201,8 @@ struct GuestsView: View {
           id: \.1
         ) { value in
           ProfileIconView(
-            user: value.0
+            user: value.0.name,
+            status: value.0.status
           )
         }
       }.padding(16)
@@ -176,8 +213,9 @@ struct GuestsView: View {
 
 struct ProfileIconView: View {
   
-  let user: Models.Room.Guest
-  
+  let user: User.Name
+  let status: User.Status
+
   var body: some View {
     ZStack {
       Circle()
@@ -185,14 +223,14 @@ struct ProfileIconView: View {
         .foregroundColor(
           color
         )
-      Text(user.name.rawValue.capitalized.prefix(1))
+      Text(user.rawValue.capitalized.prefix(1))
       .font(.title3)
       .foregroundColor(.white)
     }
   }
   
   var color: Color {
-    switch self.user.status {
+    switch self.status {
       case .online:
         return .blue
       case .texting:
@@ -200,5 +238,13 @@ struct ProfileIconView: View {
       case .offline:
         return .gray
     }
+  }
+}
+
+extension Room.State {
+  var textingGuests: [User.Name] {
+    self.statuses.filter { $0.value == .texting }
+      .keys
+      .compactMap { $0 }
   }
 }

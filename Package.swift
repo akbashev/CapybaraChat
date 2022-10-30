@@ -18,10 +18,9 @@ let package = Package(
     //
     .library(name: "ActorSystems", targets: ["ActorSystems"]),
     .library(name: "AsyncPromise", targets: ["AsyncPromise"]),
-    .library(name: "Connection", targets: ["Connection"]),
+    .library(name: "Actors", targets: ["Actors"]),
     .library(name: "Database", targets: ["Database"]),
-    .library(name: "Main", targets: ["Main"]),
-    .library(name: "Models", targets: ["Models"])
+    .library(name: "Main", targets: ["Main"])
   ],
   dependencies: [
     // Dependencies declare other packages that this package depends on.
@@ -39,12 +38,12 @@ let package = Package(
       from: "1.13.1"
     ),
     .package(
-      url: "https://github.com/pointfreeco/swift-composable-architecture.git",
-      from: "0.40.0"
-    ),
-    .package(
       url: "https://github.com/groue/GRDB.swift.git",
       from: "6.0.0"
+    ),
+    .package(
+      url: "https://github.com/apple/swift-async-algorithms.git",
+      from: "0.0.3"
     )
   ],
   targets: [
@@ -55,8 +54,7 @@ let package = Package(
       dependencies: [
         .product(name: "Vapor", package: "vapor"),
         "ActorSystems",
-        "Connection",
-        "Models"
+        "Actors"
       ],
       path: "Sources/server"
     ),
@@ -73,18 +71,17 @@ let package = Package(
       name: "AsyncPromise"
     ),
     .target(
-      name: "Connection",
+      name: "Actors",
       dependencies: [
         "ActorSystems",
         "AsyncPromise",
-        "Database",
-        "Models"
+        .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
+        "Database"
       ]
     ),
     .target(
       name: "Database",
       dependencies: [
-        "Models",
         .product(
           name: "GRDB",
           package: "GRDB.swift"
@@ -92,24 +89,15 @@ let package = Package(
       ]
     ),
     .target(
-      name: "Models"
-    ),
-    .target(
       name: "Main",
       dependencies: [
-        "Connection",
-        "Models",
-        .product(
-          name: "ComposableArchitecture",
-          package: "swift-composable-architecture"
-        ),
+        "Actors"
       ]
     ),
     .testTarget(
       name: "CapybaraChatTests",
       dependencies: [
-        "Connection",
-        "Models"
+        "Actors"
       ]
     ),
   ]

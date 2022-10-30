@@ -1,15 +1,14 @@
 import GRDB
 import Foundation
-import Models
 
 public struct RoomDatabaseClient {
-  public typealias UserRoomPair = (user: Models.User.Name, room: Models.Room.Name)
+  public typealias UserRoomPair = (user: String, room: String)
 
-  public let getRoom: (Models.Room.Name) async throws -> (Models.Room?)
+  public let getRoom: (String) async throws -> (Models.Room)
   public let updateRoom: (Models.Room) async throws -> ()
-  public let updateStatus: (Models.Room.Guest.Status, UserRoomPair) async throws -> ()
-  public let addGuest: (UserRoomPair) async throws -> (Models.Room.Guest)
-  public let addMessage: (Models.Room.Message, UserRoomPair) async throws -> ()
+  public let updateStatus: (Int, UserRoomPair) async throws -> ()
+  public let addGuest: (UserRoomPair) async throws -> (Models.User)
+  public let addMessage: (Models.Message, UserRoomPair) async throws -> ()
 }
 
 extension RoomDatabaseClient {
@@ -105,15 +104,15 @@ extension RoomDatabaseClient {
         try RoomDatabaseClient.Room
           .init(
             id: nil,
-            name: room.name.rawValue
+            name: room.name
           )
           .insert(db)
       }
     }
-    let getRoom: (Models.Room.Name) async throws -> (Models.Room?) = { room in
+    let getRoom: (String) async throws -> (Models.Room) = { room in
       try await dbQueue.read { db in
         guard let room = try RoomDatabaseClient.Room
-          .filter(Column("name") == room.rawValue)
+          .filter(Column("name") == room)
           .including(optional: Room.guests)
           .including(optional: Room.messages)
           .fetchOne(db)
@@ -126,48 +125,50 @@ extension RoomDatabaseClient {
             try? $0.guest.fetchOne(db)
           }
         let guests = try users
-          .map { user -> Models.Room.Guest in
+          .map { user -> Models.User in
           let status = try RoomDatabaseClient.UserRoom
             .filter(Column("userId") == user.id)
             .filter(Column("roomId") == room.id)
             .fetchOne(db)?
             .status ?? .offline
-          let messages: [Models.Room.Message] = try room
+          let messages: [Models.Message] = try room
             .messages
             .filter(Column("userId") == user.id)
             .fetchAll(db)
-            .map { message -> Models.Room.Message in
+            .map { message -> Models.Message in
                 .init(
-                  user: .init(rawValue: user.name),
                   createdAt: message.createdAt,
                   text: message.text
                 )
             }
-          return Models.Room.Guest(
-            name: .init(rawValue: user.name),
-            status: .init(status),
-            messages: messages
-          )
+            return .init(name: user.name, roomId: nil)
+//          return Models.Room.Guest(
+//            name: .init(rawValue: user.name),
+//            status: .init(status),
+//            messages: messages
+//          )
         }
         return Models.Room(
-          name: .init(rawValue: room.name),
-          guests: guests
+          name: room.name,
+          guestIds: [],
+          messages: [:],
+          statuses: [:]
         )
       }
     }
-    let addMessage: (Models.Room.Message, UserRoomPair) async throws -> () = { message, userRoom in
+    let addMessage: (Models.Message, UserRoomPair) async throws -> () = { message, userRoom in
       let (user, room) = (userRoom.user, userRoom.room)
       let (roomId, userId) = try await dbQueue.read { db in
         let room = try RoomDatabaseClient.Room
-          .filter(Column("name") == room.rawValue)
+          .filter(Column("name") == room)
           .fetchOne(db)
         let user = try UserDatabaseClient.User
-          .filter(Column("name") == user.rawValue)
+          .filter(Column("name") == user)
           .fetchOne(db)
         return (room?.id, user?.id)
       }
-      guard let roomId = roomId,
-              let userId = userId else {
+      guard let roomId,
+            let userId else {
          return
       }
       try await dbQueue.write { db in
@@ -181,14 +182,14 @@ extension RoomDatabaseClient {
           ).insert(db)
       }
     }
-    let addGuest: (UserRoomPair) async throws -> (Models.Room.Guest) = { userRoom in
+    let addGuest: (UserRoomPair) async throws -> (Models.User) = { userRoom in
       let (user, room) = (userRoom.user, userRoom.room)
       let (roomId, userId) = try await dbQueue.read { db in
         let room = try RoomDatabaseClient.Room
-          .filter(Column("name") == room.rawValue)
+          .filter(Column("name") == room)
           .fetchOne(db)
         let user = try UserDatabaseClient.User
-          .filter(Column("name") == user.rawValue)
+          .filter(Column("name") == user)
           .fetchOne(db)
         return (room?.id, user?.id)
       }
@@ -219,33 +220,37 @@ extension RoomDatabaseClient {
           .filter(key: userId)
           .fetchOne(db)
         else { throw RoomDatabaseClient.Error.notFound }
-        let messages: [Models.Room.Message] = try user
+        let messages: [Models.Message] = try user
           .messages
           .filter(Column("roomId") == roomId)
           .fetchAll(db)
-          .map { message -> Models.Room.Message in
-            Models.Room.Message
+          .map { message -> Models.Message in
+            Models.Message
               .init(
-                user: .init(rawValue: user.name),
+//                user: .init(rawValue: user.name),
                 createdAt: message.createdAt,
                 text: message.text
               )
           }
         return .init(
-          name: .init(rawValue: user.name),
-          status: .online,
-          messages: messages
+          name: user.name,
+          roomId: nil
         )
+//        return .init(
+//          name: .init(rawValue: user.name),
+//          status: .online,
+//          messages: messages
+//        )
       }
     }
-    let updateStatus: (Models.Room.Guest.Status, RoomDatabaseClient.UserRoomPair) async throws -> () = { status, userRoom in
+    let updateStatus: (Int, RoomDatabaseClient.UserRoomPair) async throws -> () = { status, userRoom in
       let (user, room) = (userRoom.user, userRoom.room)
       let userRoom = try await dbQueue.read { db in
         guard let room = try RoomDatabaseClient.Room
-          .filter(Column("name") == room.rawValue)
+          .filter(Column("name") == room)
           .fetchOne(db),
         let user = try UserDatabaseClient.User
-          .filter(Column("name") == user.rawValue)
+          .filter(Column("name") == user)
           .fetchOne(db)
         else {
           throw RoomDatabaseClient.Error.notFound
@@ -258,12 +263,12 @@ extension RoomDatabaseClient {
       guard let userRoom = userRoom else {
         throw RoomDatabaseClient.Error.notFound
       }
-      let dbStatus = RoomDatabaseClient.UserRoom.Status.init(status)
+      let dbStatus = RoomDatabaseClient.UserRoom.Status.init(rawValue: status)
       return try await dbQueue.write { db in
         try db.execute(
           sql: "UPDATE userRoom SET status = :status WHERE roomId = :roomId AND userId = :userId",
           arguments: [
-            "status": dbStatus.rawValue,
+            "status": dbStatus?.rawValue ?? 0,
             "roomId": userRoom.roomId,
             "userId": userRoom.userId
           ]
@@ -277,31 +282,5 @@ extension RoomDatabaseClient {
       addGuest: addGuest,
       addMessage: addMessage
     )
-  }
-}
-
-extension Room.Guest.Status {
-  init(_ status: RoomDatabaseClient.UserRoom.Status) {
-    switch status {
-      case .online:
-        self = .online
-      case .offline:
-        self = .offline
-      case .texting:
-        self = .texting
-    }
-  }
-}
-
-extension RoomDatabaseClient.UserRoom.Status {
-  init(_ status: Models.Room.Guest.Status) {
-    switch status {
-      case .online:
-        self = .online
-      case .offline:
-        self = .offline
-      case .texting:
-        self = .texting
-    }
   }
 }

@@ -2,11 +2,10 @@ import Distributed
 import Logging
 import NIO
 import Foundation
-import Models
 import Vapor
 import Database
 import ActorSystems
-import Connection
+import Actors
 import GRDB
 
 #if DEBUG
@@ -26,47 +25,35 @@ public func configure(_ app: Application) async throws {
       protocol: .ws
     )
   )
-  let serverConnectionClient = ServerConnectionClient(
-    clusterSystem: system
-  )
   system.registerOnDemandResolveHandler { actorId in
     // We create new BotPlayers "ad-hoc" as they are requested for.
     // Subsequent resolves are able to resolve the same instance.
     switch actorId {
-      case .simple:
-        return .none
       case .full(let id, _, _, _):
         switch id.type {
           case String(describing: User.self):
             return system
               .makeActorWithID(actorId) {
-                return UserConnection(
+                return User(
                   actorSystem: system,
-                  database: database.users
-                )
-              }
-          case String(describing: UserRoomConnection.UserRoom.self):
-            guard let userName = UserRoomConnection.UserRoom.user(for: id._id)
-            else { return .none }
-            return system
-              .makeActorWithID(actorId) {
-                return UserRoomConnection(
-                  actorSystem: system,
-                  client: serverConnectionClient,
-                  name: .init(rawValue: userName)
+                  database: database.users,
+                  userId: .init(rawValue: id._id)
                 )
               }
           case String(describing: Room.self):
             return system
               .makeActorWithID(actorId) {
-                return RoomConnection(
+                return Room(
                   actorSystem: system,
-                  database: database.rooms
+                  database: database.rooms,
+                  roomId: .init(rawValue: id._id)
                 )
               }
           default:
             return nil
         }
+      default:
+        return nil
     }
 
   }
