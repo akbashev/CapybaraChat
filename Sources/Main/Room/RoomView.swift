@@ -1,17 +1,17 @@
 import SwiftUI
 import ActorSystems
-import Actors
+import Chat
 
 struct RoomView: View {
   
-  @StateObject private var room: ActorViewModel<Room>
-  @StateObject private var user: ActorViewModel<User>
+  @StateObject private var room: ActorViewModel<Room.State, Room.Action, Room.Environment, Room.ID>
+  @StateObject private var user: ActorViewModel<User.State, User.Action, User.Environment, User.ID>
   
   @State var message: String = ""
   
   init(
     id: String,
-    user: ActorViewModel<User>
+    user: ActorViewModel<User.State, User.Action, User.Environment, User.ID>
   ) {
     self._room = .init(wrappedValue: .init(clusterSystem: clusterSystem, id: id))
     self._user = .init(wrappedValue: user)
@@ -33,7 +33,7 @@ struct RoomView: View {
             return messages
               .map {
                 MessagesView.Msg(
-                  userId: id.rawValue,
+                  userId: id,
                   roomId: self.room.id,
                   message: $0
                 )
@@ -57,10 +57,10 @@ struct RoomView: View {
       InputView(
         message: $message,
         send: { message in
-          user.send(.send(message: message))
+          room.send(.send(message: message, from: self.user.id))
         },
         change: { message in
-          user.send(.update(status: message.isEmpty ? .online : .texting))
+          room.send(.update(status: message.isEmpty ? .online : .texting, from: self.user.id))
         }
       )
       .padding()
@@ -68,7 +68,7 @@ struct RoomView: View {
     .navigationTitle(room.id)
     .onAppear {
       if let room = room.actor {
-        self.user.send(.join(room: room))
+        self.room.send(.connect(user: user.id))
       }
     }
   }
@@ -159,13 +159,13 @@ struct InputView: View {
 
 struct TextingGuestsView: View {
   
-  let guests: [User.Name]
+  let guests: [User.ID]
   
   var body: some View {
     Group {
       Text(
         guests
-          .compactMap { $0.rawValue.first }
+          .compactMap { $0.first }
           .map { String($0) }
           .joined(separator: ",")
       )
@@ -182,7 +182,7 @@ struct TextingGuestsView: View {
 struct GuestsView: View {
   
   struct Guest: Equatable {
-    let name: User.Name
+    let name: User.ID
     let status: User.Status
   }
   
@@ -213,7 +213,7 @@ struct GuestsView: View {
 
 struct ProfileIconView: View {
   
-  let user: User.Name
+  let user: User.ID
   let status: User.Status
 
   var body: some View {
@@ -223,7 +223,7 @@ struct ProfileIconView: View {
         .foregroundColor(
           color
         )
-      Text(user.rawValue.capitalized.prefix(1))
+      Text(user.capitalized.prefix(1))
       .font(.title3)
       .foregroundColor(.white)
     }
@@ -242,7 +242,7 @@ struct ProfileIconView: View {
 }
 
 extension Room.State {
-  var textingGuests: [User.Name] {
+  var textingGuests: [User.ID] {
     self.statuses.filter { $0.value == .texting }
       .keys
       .compactMap { $0 }

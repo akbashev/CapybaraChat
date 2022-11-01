@@ -1161,15 +1161,15 @@ public extension ClientServerActorSystem {
 extension ClientServerActorSystem {
   
   /// We make up an ID for the remote bot; We know they are resolved and created on-demand
-  public func actorId<V>(
+  public func actorId<V, ID>(
     of type: V.Type,
-    id: String
+    id: ID
   ) -> ActorIdentity
   {
     .full(
       id: .init(
-        type: String(describing: type.self),
-        id: id
+        type: String(reflecting: type.self),
+        id: id as! String
       ),
       protocol: mode.`protocol`,
       host: mode.host,

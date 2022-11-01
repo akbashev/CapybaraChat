@@ -5,7 +5,8 @@ import Foundation
 import Vapor
 import Database
 import ActorSystems
-import Actors
+import Chat
+import Messagable
 import GRDB
 
 #if DEBUG
@@ -31,22 +32,28 @@ public func configure(_ app: Application) async throws {
     switch actorId {
       case .full(let id, _, _, _):
         switch id.type {
-          case String(describing: User.self):
+          case String(reflecting: User.Actor.self):
             return system
               .makeActorWithID(actorId) {
-                return User(
+                return User.Actor.init(
                   actorSystem: system,
-                  userDatabase: database.users,
-                  userId: id._id
+                  id: id._id,
+                  state: .init(userId: id._id),
+                  environment: .init(userDatabase: database.users),
+                  reducer: userReducer,
+                  stateLoader: userStateLoader
                 )
               }
-          case String(describing: Room.self):
+          case String(reflecting: Room.Actor.self):
             return system
               .makeActorWithID(actorId) {
-                return Room(
+                return Room.Actor.init(
                   actorSystem: system,
-                  roomDatabase: database.rooms,
-                  roomId: id._id
+                  id: id._id,
+                  state: .init(roomId: id._id),
+                  environment: .init(roomDatabase: database.rooms),
+                  reducer: roomReducer,
+                  stateLoader: roomStateLoader
                 )
               }
           default:

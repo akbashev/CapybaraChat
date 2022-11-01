@@ -3,14 +3,7 @@ import Foundation
 // Models
 extension User {
   // TODO: Add proper ID.
-  public struct Name: RawRepresentable, Equatable, Codable, Sendable, Hashable {
-    public let rawValue: String
-    public init(
-      rawValue: String
-    ) {
-      self.rawValue = rawValue
-    }
-  }
+  public typealias Name = String
   
   public enum Status: Int, Equatable, Sendable, Codable, Comparable {
     case texting = 0

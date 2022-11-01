@@ -17,9 +17,10 @@ let package = Package(
     .executable(name: "server", targets: ["server"]),
     //
     .library(name: "ActorSystems", targets: ["ActorSystems"]),
-    .library(name: "Actors", targets: ["Actors"]),
+    .library(name: "Chat", targets: ["Chat"]),
     .library(name: "Database", targets: ["Database"]),
-    .library(name: "Main", targets: ["Main"])
+    .library(name: "Main", targets: ["Main"]),
+    .library(name: "Messagable", targets: ["Messagable"])
   ],
   dependencies: [
     // Dependencies declare other packages that this package depends on.
@@ -39,10 +40,6 @@ let package = Package(
     .package(
       url: "https://github.com/groue/GRDB.swift.git",
       from: "6.0.0"
-    ),
-    .package(
-      url: "https://github.com/apple/swift-async-algorithms.git",
-      from: "0.0.3"
     )
   ],
   targets: [
@@ -52,8 +49,7 @@ let package = Package(
       name: "server",
       dependencies: [
         .product(name: "Vapor", package: "vapor"),
-        "ActorSystems",
-        "Actors"
+        "Chat"
       ],
       path: "Sources/server"
     ),
@@ -67,10 +63,9 @@ let package = Package(
       ]
     ),
     .target(
-      name: "Actors",
+      name: "Chat",
       dependencies: [
-        "ActorSystems",
-        .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
+        "Messagable",
         "Database"
       ]
     ),
@@ -86,13 +81,18 @@ let package = Package(
     .target(
       name: "Main",
       dependencies: [
-        "Actors"
+        "Chat"
+      ]
+    ),
+    .target(
+      name: "Messagable",
+      dependencies: [
+        "ActorSystems"
       ]
     ),
     .testTarget(
       name: "CapybaraChatTests",
       dependencies: [
-        "Actors"
       ]
     ),
   ]

@@ -1,9 +1,9 @@
 import SwiftUI
-import Actors
+import Chat
 
 struct UserView: View {
   
-  @StateObject private var user: ActorViewModel<User>
+  @StateObject private var user: ActorViewModel<User.State, User.Action, User.Environment, User.ID>
   @State var roomName: String = ""
   
   init(
@@ -19,7 +19,7 @@ struct UserView: View {
   
   var body: some View {
     VStack(spacing: 16) {
-      Text("User: \(user.state?.userId.rawValue ?? "")")
+      Text("User: \(user.state?.userId ?? "")")
         .font(.headline)
         .frame(maxWidth: .infinity, alignment: .leading)
       TextField(

@@ -1,16 +1,22 @@
 import Foundation
-import Actors
 import ActorSystems
 import Combine
 import Distributed
+import Messagable
 
-@MainActor class ActorViewModel<T: DistributedActor & Reducer>: ObservableObject where T.ActorSystem == ClientServerActorSystem, T.ID == ActorIdentity {
+@MainActor
+class ActorViewModel<State, Action, Environment, ID>: ObservableObject
+  where State: Codable & Sendable,
+        Action: Codable & Sendable,
+        ID: Codable {
   
-  @Published public var state: T.State?
+  typealias Actor = Messagable<State, Action, Environment, ID>
+  
+  @Published public var state: State?
   let clusterSystem: ClientServerActorSystem
-  let id: String
+  let id: ID
   
-  private lazy var stream: AsyncStream<T.State?> = .init { continuation in
+  private lazy var stream: AsyncStream<State?> = .init { continuation in
     let task = Task {
       while !Task.isCancelled {
         let state = try await self.actor?.getUpdates()
@@ -23,23 +29,25 @@ import Distributed
     }
   }
   
-  private lazy var actorId: T.ID = {
+  private lazy var actorId: ClientServerActorSystem.ActorID = {
     self.clusterSystem
-      .actorId(of: T.self, id: self.id)
+      .actorId(
+        of: Actor.self,
+        id: self.id
+      )
   }()
   
   // TODO: Add reconnection, what if cluster system fail?
-  lazy var actor: T? = {
-    try? T
-      .resolve(
-        id: self.actorId,
-        using: self.clusterSystem
-      )
+  lazy var actor: Actor? = {
+    try? Actor.resolve(
+      id: self.actorId,
+      using: self.clusterSystem
+    )
   }()
   
   init(
     clusterSystem: ClientServerActorSystem,
-    id: String
+    id: ID
   ) {
     self.clusterSystem = clusterSystem
     self.id = id
@@ -53,9 +61,10 @@ import Distributed
     }
   }
   
-  func send(_ action: T.Action) {
+  func send(_ action: Action) {
     Task {
-      try await self.actor?.send(action: action)
+      try await self.actor?
+        .send(action)
     }
   }
 }
